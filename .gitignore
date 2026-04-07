@@ -1,3 +1,7 @@
 /.venv/
 /app/__pycache__/
 /.env
+/app/api/__pycache__/
+/app/domain/__pycache__/
+/app/infrastructure/__pycache__/
+/app/use_cases/__pycache__/

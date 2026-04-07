@@ -19,15 +19,10 @@ from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.config import settings
-
 
 # ---------------------------------------------------------------------------
 # Engine + session factory
@@ -35,16 +30,18 @@ from app.config import settings
 
 async_engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=False,          # set to True only for debugging — very noisy
+    echo=False,  # set to True only for debugging — very noisy
     pool_pre_ping=True,  # detect stale connections before handing them out
     pool_size=5,
     max_overflow=10,
 )
 
-AsyncSessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(
-    bind=async_engine,
-    expire_on_commit=False,  # keep attributes accessible after commit
-    class_=AsyncSession,
+AsyncSessionLocal: async_sessionmaker[AsyncSession] = (  # pylint: disable=invalid-name
+    async_sessionmaker(
+        bind=async_engine,
+        expire_on_commit=False,  # keep attributes accessible after commit
+        class_=AsyncSession,
+    )
 )
 
 
@@ -52,13 +49,15 @@ AsyncSessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(
 # Declarative base
 # ---------------------------------------------------------------------------
 
-class Base(DeclarativeBase):
+
+class Base(DeclarativeBase):  # pylint: disable=too-few-public-methods
     """Shared declarative base for all ORM models."""
 
 
 # ---------------------------------------------------------------------------
 # ORM Models
 # ---------------------------------------------------------------------------
+
 
 class AudioGeneration(Base):
     """
@@ -96,7 +95,7 @@ class AudioGeneration(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        server_default=func.now(),
+        server_default=func.now(),  # pylint: disable=not-callable
         default=lambda: datetime.now(timezone.utc),
     )
 
@@ -126,6 +125,7 @@ class AudioGeneration(Base):
 # ---------------------------------------------------------------------------
 # Database lifecycle helpers
 # ---------------------------------------------------------------------------
+
 
 async def init_db() -> None:
     """

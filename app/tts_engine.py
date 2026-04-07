@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import logging
 import time
-import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import ClassVar
@@ -50,6 +49,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Abstract backend protocol
 # ---------------------------------------------------------------------------
+
 
 class BaseTTSBackend(ABC):
     """
@@ -97,6 +97,7 @@ class BaseTTSBackend(ABC):
 # Fish Speech v1.5 backend
 # ---------------------------------------------------------------------------
 
+
 class FishSpeechBackend(BaseTTSBackend):
     """
     Fish Speech v1.5.0 — uses the TTSInferenceEngine API shipped with the
@@ -128,9 +129,14 @@ class FishSpeechBackend(BaseTTSBackend):
         t0 = time.perf_counter()
 
         try:
-            import torch
-            from tools.inference_engine import TTSInferenceEngine
-            from tools.llama.generate import launch_thread_safe_queue
+            from tools.inference_engine import (  # pylint: disable=C0415
+                TTSInferenceEngine,
+            )
+            from tools.llama.generate import (  # pylint: disable=C0415
+                launch_thread_safe_queue,
+            )
+
+            # pylint: disable-next=import-outside-toplevel
             from tools.vqgan.inference import load_model as load_decoder_model
         except ImportError as exc:
             raise RuntimeError(
@@ -149,9 +155,7 @@ class FishSpeechBackend(BaseTTSBackend):
         )
 
         # ---- Firefly GAN decoder ----
-        decoder_ckpt = (
-            self._ckpt_dir / "firefly-gan-vq-fsq-8x1024-21hz-generator.pth"
-        )
+        decoder_ckpt = self._ckpt_dir / "firefly-gan-vq-fsq-8x1024-21hz-generator.pth"
         decoder_model = load_decoder_model(
             config_name="firefly_gan_vq",
             checkpoint_path=str(decoder_ckpt),
@@ -169,38 +173,52 @@ class FishSpeechBackend(BaseTTSBackend):
         logger.info("FishSpeechBackend: loaded in %.2fs", elapsed)
         self._loaded = True
 
-    def generate(self, text: str, output_path: Path,  # type: ignore[override]
-                 reference_wav: Path | None = None,
-                 reference_text: str | None = None) -> None:
+    def generate(  # pylint: disable=too-many-locals
+        self,
+        text: str,
+        output_path: Path,  # type: ignore[override]
+        reference_wav: Path | None = None,
+        reference_text: str | None = None,
+    ) -> None:
         if not self._loaded:
             raise RuntimeError("FishSpeechBackend.load() has not been called")
 
         try:
-            import soundfile as sf
-            from tools.schema import ServeReferenceAudio, ServeTTSRequest
+            import soundfile as sf  # pylint: disable=import-outside-toplevel
+            from tools.schema import (  # pylint: disable=import-outside-toplevel
+                ServeReferenceAudio,
+                ServeTTSRequest,
+            )
         except ImportError as exc:
             raise RuntimeError("fish_speech package not available") from exc
 
-        logger.debug("FishSpeechBackend: synthesising %d chars (voice ref: %s)",
-                     len(text), reference_wav)
+        logger.debug(
+            "FishSpeechBackend: synthesising %d chars (voice ref: %s)",
+            len(text),
+            reference_wav,
+        )
         t0 = time.perf_counter()
 
         references = []
         if reference_wav is not None and reference_wav.is_file():
-            references = [ServeReferenceAudio(
-                audio=reference_wav.read_bytes(),
-                text=reference_text or "",
-            )]
+            references = [
+                ServeReferenceAudio(
+                    audio=reference_wav.read_bytes(),
+                    text=reference_text or "",
+                )
+            ]
 
         # Use a fixed seed when no reference voice is supplied so the default
         # speaker stays consistent across requests instead of being random.
         seed = None if references else 42
 
-        req = ServeTTSRequest(text=text, streaming=False, references=references, seed=seed)
+        req = ServeTTSRequest(
+            text=text, streaming=False, references=references, seed=seed
+        )
 
         try:
             result = None
-            for result in self._engine.inference(req):
+            for result in self._engine.inference(req):  # type: ignore[attr-defined]
                 if result.code == "error":
                     raise RuntimeError(f"Fish Speech inference error: {result.error}")
                 if result.code == "final":
@@ -210,7 +228,9 @@ class FishSpeechBackend(BaseTTSBackend):
                 raise RuntimeError("Fish Speech produced no audio output")
 
             sample_rate, audio_np = result.audio
-            sf.write(str(output_path), audio_np, samplerate=sample_rate, subtype="PCM_16")
+            sf.write(
+                str(output_path), audio_np, samplerate=sample_rate, subtype="PCM_16"
+            )
 
         except torch.cuda.OutOfMemoryError:
             torch.cuda.empty_cache()
@@ -232,6 +252,7 @@ class FishSpeechBackend(BaseTTSBackend):
 # ---------------------------------------------------------------------------
 # XTTS v2 backend (Coqui TTS)
 # ---------------------------------------------------------------------------
+
 
 class XTTSBackend(BaseTTSBackend):
     """
@@ -258,7 +279,7 @@ class XTTSBackend(BaseTTSBackend):
         t0 = time.perf_counter()
 
         try:
-            from TTS.api import TTS  # type: ignore[import]
+            from TTS.api import TTS  # type: ignore[import]  # pylint: disable=C0415
         except ImportError as exc:
             raise RuntimeError(
                 "Coqui TTS package not found. Install it with:\n"
@@ -291,7 +312,7 @@ class XTTSBackend(BaseTTSBackend):
         try:
             # XTTS writes the audio file directly; fp16 is handled internally
             # by the Coqui library when the model is on a CUDA device.
-            self._tts.tts_to_file(
+            self._tts.tts_to_file(  # type: ignore[attr-defined]
                 text=text,
                 speaker_wav=str(speaker_wav),
                 language="en",
@@ -376,13 +397,14 @@ class TTSService:
         If ``settings.LAZY_XTTS`` is True, XTTS is skipped here and will be
         loaded on the first request that targets it.
         """
-        import asyncio
+        import asyncio  # pylint: disable=import-outside-toplevel
 
         loop = asyncio.get_running_loop()
 
         if self._lazy_fish_speech:
             logger.info(
-                "TTSService: LAZY_FISH_SPEECH=true — Fish Speech will be loaded on first request"
+                "TTSService: LAZY_FISH_SPEECH=true — "
+                "Fish Speech will be loaded on first request"
             )
         else:
             logger.info("TTSService: loading Fish Speech backend")
@@ -475,15 +497,23 @@ class TTSService:
             transcript = voices_dir / f"{voice_id}.txt"
             if candidate.is_file():
                 reference_wav = candidate
-                reference_text = transcript.read_text(encoding="utf-8").strip() \
-                    if transcript.is_file() else ""
+                reference_text = (
+                    transcript.read_text(encoding="utf-8").strip()
+                    if transcript.is_file()
+                    else ""
+                )
             else:
-                logger.warning("TTSService: voice %r not found, using default", voice_id)
+                logger.warning(
+                    "TTSService: voice %r not found, using default", voice_id
+                )
 
         if isinstance(backend, FishSpeechBackend):
-            backend.generate(text, wav_path,
-                             reference_wav=reference_wav,
-                             reference_text=reference_text)
+            backend.generate(
+                text,
+                wav_path,
+                reference_wav=reference_wav,
+                reference_text=reference_text,
+            )
         else:
             backend.generate(text, wav_path)
 
@@ -513,6 +543,7 @@ class TTSService:
     def _convert_to_mp3(wav_path: Path, mp3_path: Path) -> None:
         """Convert a WAV file to MP3 at 192 kbps using pydub."""
         try:
+            # pylint: disable-next=import-outside-toplevel
             from pydub import AudioSegment  # type: ignore[import]
         except ImportError:
             logger.warning(
@@ -525,6 +556,6 @@ class TTSService:
             segment = AudioSegment.from_wav(str(wav_path))
             segment.export(str(mp3_path), format="mp3", bitrate="192k")
             logger.debug("TTSService: MP3 saved → %s", mp3_path)
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             # MP3 conversion failure is non-fatal; the WAV is still usable.
             logger.exception("TTSService: MP3 conversion failed for %s", wav_path)

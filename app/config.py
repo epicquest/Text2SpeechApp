@@ -32,6 +32,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Application settings loaded from environment variables and .env file."""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -92,7 +94,7 @@ class Settings(BaseSettings):
     @field_validator("LOG_LEVEL")
     @classmethod
     def _validate_log_level(cls, v: str) -> str:
-        import logging
+        import logging  # pylint: disable=import-outside-toplevel
 
         level = logging.getLevelName(v.upper())
         if not isinstance(level, int):

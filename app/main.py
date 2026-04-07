@@ -34,15 +34,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypedDict
 
-import re
-
-from fastapi import Depends, FastAPI, File, Form, HTTPException, status, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -73,7 +72,7 @@ class JobState(TypedDict):
     """Ephemeral job record kept in process memory for fast status lookups."""
 
     status: Literal["pending", "processing", "done", "error"]
-    file_path: str | None   # relative URL path returned to the frontend
+    file_path: str | None  # relative URL path returned to the frontend
     error: str | None
 
 
@@ -106,7 +105,12 @@ async def inference_worker(
 
     while True:
         job_id, text, model_name, voice_id = await queue.get()
-        logger.info("inference_worker: starting job %s (model=%s voice=%s)", job_id, model_name, voice_id)
+        logger.info(
+            "inference_worker: starting job %s (model=%s voice=%s)",
+            job_id,
+            model_name,
+            voice_id,
+        )
 
         # ---- Update state: pending → processing ----
         job_store[job_id]["status"] = "processing"
@@ -138,12 +142,12 @@ async def inference_worker(
                 record = await session.get(AudioGeneration, uuid.UUID(job_id))
                 if record is not None:
                     record.status = "done"
-                    record.file_path = str(wav_path)   # absolute path stored in DB
+                    record.file_path = str(wav_path)  # absolute path stored in DB
                     await session.commit()
 
             logger.info("inference_worker: job %s done → %s", job_id, wav_path)
 
-        except Exception as exc:
+        except Exception as exc:  # pylint: disable=broad-exception-caught
             error_msg = f"{type(exc).__name__}: {exc}"
             logger.exception("inference_worker: job %s failed — %s", job_id, error_msg)
 
@@ -166,7 +170,7 @@ async def inference_worker(
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     """
     Manage application startup and shutdown.
 
@@ -202,8 +206,8 @@ async def lifespan(app: FastAPI):
     )
 
     # Attach to app.state so endpoints can access them
-    app.state.queue = queue
-    app.state.executor = executor
+    _app.state.queue = queue
+    _app.state.executor = executor
 
     logger.info("lifespan: application ready")
     yield  # ← server is running
@@ -237,7 +241,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # Tighten in production
+    allow_origins=["*"],  # Tighten in production
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -250,7 +254,9 @@ settings.AUDIO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 VOICES_DIR.mkdir(parents=True, exist_ok=True)
 
 # Serve generated audio files at /static/audio/
-app.mount("/static/audio", StaticFiles(directory=str(settings.AUDIO_OUTPUT_DIR)), name="audio")
+app.mount(
+    "/static/audio", StaticFiles(directory=str(settings.AUDIO_OUTPUT_DIR)), name="audio"
+)
 # Serve voice reference audio at /static/voices/
 app.mount("/static/voices", StaticFiles(directory=str(VOICES_DIR)), name="voices")
 
@@ -260,7 +266,11 @@ app.mount("/static/voices", StaticFiles(directory=str(VOICES_DIR)), name="voices
 
 
 class GenerateRequest(BaseModel):
-    text: str = Field(..., min_length=1, max_length=4096, description="Text to synthesise")
+    """Request body for the /generate endpoint."""
+
+    text: str = Field(
+        ..., min_length=1, max_length=4096, description="Text to synthesise"
+    )
     model: str = Field(
         default="fish_speech",
         description='TTS backend: "fish_speech" | "xtts"',
@@ -272,10 +282,14 @@ class GenerateRequest(BaseModel):
 
 
 class GenerateResponse(BaseModel):
+    """Response body returned after queueing a generation job."""
+
     job_id: str
 
 
 class StatusResponse(BaseModel):
+    """Polling response for a generation job's current state."""
+
     status: Literal["pending", "processing", "done", "error"]
     file_path: str | None = None
     error: str | None = None
@@ -293,11 +307,13 @@ class AudioGenerationOut(BaseModel):
     created_at: str | None
 
     @classmethod
-    def from_orm(cls, record: AudioGeneration) -> AudioGenerationOut:
-        return cls(**record.to_dict())
+    def from_orm(cls, obj: AudioGeneration) -> AudioGenerationOut:
+        return cls(**obj.to_dict())
 
 
 class VoiceOut(BaseModel):
+    """Voice profile summary returned by the /voices endpoint."""
+
     id: str
     name: str
 
@@ -308,7 +324,9 @@ class VoiceOut(BaseModel):
 
 
 def _slugify_voice_name(name: str) -> str:
-    """Convert a display name to a safe filename stem (alphanumeric + dash/underscore)."""
+    """
+    Convert a display name to a safe filename stem (alphanumeric + dash/underscore).
+    """
     slug = re.sub(r"[^\w\-]", "_", name.strip().lower())
     slug = re.sub(r"_+", "_", slug).strip("_")
     return slug[:64]
@@ -353,7 +371,12 @@ async def generate(
 
     # 3. Enqueue the job
     await app.state.queue.put((job_id, req.text, req.model, req.voice))
-    logger.info("POST /generate: enqueued job %s (model=%s voice=%s)", job_id, req.model, req.voice)
+    logger.info(
+        "POST /generate: enqueued job %s (model=%s voice=%s)",
+        job_id,
+        req.model,
+        req.voice,
+    )
 
     return GenerateResponse(job_id=job_id)
 
@@ -390,8 +413,8 @@ async def get_status(
     # Slow path — DB lookup (covers server-restart scenario)
     try:
         uid = uuid.UUID(job_id)
-    except ValueError:
-        raise HTTPException(status_code=422, detail="Invalid job_id format")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid job_id format") from exc
 
     record = await session.get(AudioGeneration, uid)
     if record is None:
@@ -401,7 +424,11 @@ async def get_status(
     if record.file_path and record.status == "done":
         file_path = f"/static/audio/{Path(record.file_path).name}"
 
-    return StatusResponse(status=record.status, file_path=file_path, error=None)  # type: ignore[arg-type]
+    return StatusResponse(
+        status=record.status,  # type: ignore[arg-type]
+        file_path=file_path,
+        error=None,
+    )
 
 
 @app.get(
@@ -446,8 +473,8 @@ async def delete_audio(
     """
     try:
         uid = uuid.UUID(audio_id)
-    except ValueError:
-        raise HTTPException(status_code=422, detail="Invalid audio_id format")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid audio_id format") from exc
 
     record = await session.get(AudioGeneration, uid)
     if record is None:
@@ -502,7 +529,9 @@ async def list_voices() -> list[VoiceOut]:
 )
 async def create_voice(
     name: str = Form(..., min_length=1, max_length=100),
-    transcript: str = Form(default="", description="Text spoken in the reference audio"),
+    transcript: str = Form(
+        default="", description="Text spoken in the reference audio"
+    ),
     audio: UploadFile = File(..., description="Reference WAV audio file"),
 ) -> VoiceOut:
     """
@@ -518,7 +547,9 @@ async def create_voice(
 
     # Accept only WAV files
     is_wav_content = (audio.content_type or "").lower() in (
-        "audio/wav", "audio/x-wav", "audio/wave",
+        "audio/wav",
+        "audio/x-wav",
+        "audio/wave",
     )
     is_wav_name = (audio.filename or "").lower().endswith(".wav")
     if not (is_wav_content or is_wav_name):

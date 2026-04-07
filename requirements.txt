@@ -1,0 +1,82 @@
+# =============================================================================
+# requirements.txt — Local TTS Web Application
+# Python 3.12+   |   Ubuntu 24.04   |   CUDA 12.x   |   RTX 4060 8 GB
+# =============================================================================
+#
+# Installation order matters when GPU wheels are involved.
+# Use the provided setup instructions below for a clean first install.
+#
+# QUICK START
+# -----------
+#   # 1. Create venv
+#   python3.12 -m venv .venv && source .venv/bin/activate
+#
+#   # 2. Install PyTorch with CUDA 12.1 (choose the right CUDA version for your driver)
+#   pip install torch==2.3.0 torchaudio==2.3.0 --index-url https://download.pytorch.org/whl/cu121
+#
+#   # 3. Install everything else
+#   pip install -r requirements.txt
+#
+#   # 4. Install Fish Speech from source (pinned to v1.5 tag)
+#   pip install "fish-speech @ git+https://github.com/fishaudio/fish-speech.git@v1.5.0"
+#
+#   # 5. Download Fish Speech checkpoints to /models/fish-speech-1.5/
+#   #    (follow the official fish-speech README for huggingface-hub download)
+#
+#   # 6. Place a reference speaker WAV at /app/static/reference_speaker.wav
+#   #    (required for XTTS; ~10 seconds of clean speech, mono or stereo)
+#
+#   # 7. Set environment variables (or create a .env file in the project root)
+#   export DATABASE_URL="postgresql+asyncpg://tts_user:tts_password@localhost:5432/tts_db"
+#
+#   # 8. Start the server
+#   uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+
+# =============================================================================
+# Web framework
+# =============================================================================
+fastapi>=0.115.0,<1.0.0
+uvicorn[standard]>=0.30.0,<1.0.0
+python-multipart>=0.0.9           # required for FastAPI form parsing
+
+# =============================================================================
+# Configuration
+# =============================================================================
+pydantic>=2.7.0,<3.0.0
+pydantic-settings>=2.3.0,<3.0.0
+
+# =============================================================================
+# Database — async PostgreSQL
+# =============================================================================
+sqlalchemy[asyncio]>=2.0.30,<3.0.0
+asyncpg>=0.29.0,<1.0.0
+
+# =============================================================================
+# PyTorch — installed separately (see QUICK START above)
+# These pins document the tested versions; remove if installing via --index-url
+# =============================================================================
+# torch==2.3.0       # install via: pip install torch==2.3.0 --index-url ...
+# torchaudio==2.3.0  # install via: pip install torchaudio==2.3.0 --index-url ...
+
+# =============================================================================
+# Audio I/O
+# =============================================================================
+soundfile>=0.12.1,<1.0.0         # WAV read/write (libsndfile backend)
+pydub>=0.25.1,<1.0.0             # WAV → MP3 conversion (requires ffmpeg in PATH)
+
+# =============================================================================
+# TTS models
+# =============================================================================
+# Fish Speech is installed from source (see QUICK START step 4).
+# The line below is left commented so pip does not try to re-install it
+# if the VCS dependency is already present in the venv.
+# fish-speech @ git+https://github.com/fishaudio/fish-speech.git@v1.5.0
+
+# TTS>=0.22.0,<1.0.0             # Coqui XTTS v2 — requires Python <3.12; incompatible with this venv.
+#                                 # XTTSBackend will raise ImportError at load time if used.
+#                                 # Install manually on Python 3.11 if XTTS is needed.
+
+# =============================================================================
+# Utilities
+# =============================================================================
+numpy>=1.26.0,<3.0.0

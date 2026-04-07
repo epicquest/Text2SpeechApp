@@ -1,0 +1,87 @@
+INFO:     127.0.0.1:40648 - "OPTIONS /generate HTTP/1.1" 200 OK
+2026-04-07T16:09:38  INFO      app.main  POST /generate: enqueued job 956b007e-39fe-4307-84b1-cfb41840caf5 (model=fish_speech)
+INFO:     127.0.0.1:40648 - "POST /generate HTTP/1.1" 202 Accepted
+2026-04-07T16:09:38  INFO      app.main  inference_worker: starting job 956b007e-39fe-4307-84b1-cfb41840caf5 (model=fish_speech)
+2026-04-07 16:09:38.261 | INFO     | tools.llama.generate:generate_long:789 - Encoded text: how are you? Good, good
+2026-04-07 16:09:38.261 | INFO     | tools.llama.generate:generate_long:807 - Generating sentence 1/1 of sample 1/1
+  0%|          | 0/1023 [00:00<?, ?it/s]/home/mikulasstencel/_github/tts-app/.venv/lib/python3.12/site-packages/torch/backends/cuda/__init__.py:342: FutureWarning: torch.backends.cuda.sdp_kernel() is deprecated. In the future, this context manager will be removed. Please see, torch.nn.attention.sdpa_kernel() for the new context manager, with updated signature.
+  warnings.warn(
+  0%|          | 3/1023 [00:00<00:47, 21.67it/s]  1%|          | 6/1023 [00:00<00:45, 22.59it/s]  1%|          | 9/1023 [00:00<00:43, 23.08it/s]  1%|          | 12/1023 [00:00<00:43, 23.47it/s]  1%|▏         | 15/1023 [00:00<00:41, 24.37it/s]  2%|▏         | 18/1023 [00:00<00:39, 25.68it/s]  2%|▏         | 21/1023 [00:00<00:37, 26.50it/s]  2%|▏         | 24/1023 [00:00<00:37, 26.82it/s]  3%|▎         | 27/1023 [00:01<00:36, 27.18it/s]  3%|▎         | 30/1023 [00:01<00:36, 27.45it/s]  3%|▎         | 33/1023 [00:01<00:35, 27.65it/s]  4%|▎         | 36/1023 [00:01<00:35, 27.88it/s]  4%|▎         | 36/1023 [00:01<00:38, 25.40it/s]
+2026-04-07 16:09:39.729 | INFO     | tools.llama.generate:generate_long:861 - Generated 38 tokens in 1.47 seconds, 25.90 tokens/sec
+2026-04-07 16:09:39.729 | INFO     | tools.llama.generate:generate_long:864 - Bandwidth achieved: 16.52 GB/s
+2026-04-07 16:09:39.729 | INFO     | tools.llama.generate:generate_long:869 - GPU Memory used: 1.76 GB
+2026-04-07 16:09:39.730 | INFO     | tools.inference_engine.vq_manager:decode_vq_tokens:20 - VQ features: torch.Size([8, 37])
+/home/mikulasstencel/_github/tts-app/.venv/lib/python3.12/site-packages/torch/nn/modules/conv.py:306: UserWarning: Plan failed with a cudnnException: CUDNN_BACKEND_EXECUTION_PLAN_DESCRIPTOR: cudnnFinalize Descriptor Failed cudnn_status: CUDNN_STATUS_NOT_SUPPORTED (Triggered internally at ../aten/src/ATen/native/cudnn/Conv_v8.cpp:919.)
+  return F.conv1d(input, weight, bias, self.stride,
+INFO:     127.0.0.1:40648 - "GET /status/956b007e-39fe-4307-84b1-cfb41840caf5 HTTP/1.1" 200 OK
+2026-04-07T16:09:40  INFO      app.tts_engine  FishSpeechBackend: synthesis done in 1.81s → app/static/audio/956b007e-39fe-4307-84b1-cfb41840caf5.wav
+2026-04-07T16:09:40  ERROR     app.tts_engine  TTSService: MP3 conversion failed for app/static/audio/956b007e-39fe-4307-84b1-cfb41840caf5.wav
+Traceback (most recent call last):
+  File "/home/mikulasstencel/_github/tts-app/app/tts_engine.py", line 468, in _convert_to_mp3
+    segment.export(str(mp3_path), format="mp3", bitrate="192k")
+  File "/home/mikulasstencel/_github/tts-app/.venv/lib/python3.12/site-packages/pydub/audio_segment.py", line 963, in export
+    p = subprocess.Popen(conversion_command, stdin=devnull, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/subprocess.py", line 1026, in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+  File "/usr/lib/python3.12/subprocess.py", line 1955, in _execute_child
+    raise child_exception_type(errno_num, err_msg, err_filename)
+FileNotFoundError: [Errno 2] No such file or directory: 'ffmpeg'
+2026-04-07T16:09:40  INFO      app.main  inference_worker: job 956b007e-39fe-4307-84b1-cfb41840caf5 done → app/static/audio/956b007e-39fe-4307-84b1-cfb41840caf5.wav
+INFO:     127.0.0.1:40648 - "GET /status/956b007e-39fe-4307-84b1-cfb41840caf5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40648 - "GET /history?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40662 - "GET /static/audio/956b007e-39fe-4307-84b1-cfb41840caf5.wav HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:40662 - "GET /static/audio/956b007e-39fe-4307-84b1-cfb41840caf5.wav HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:40672 - "GET /static/audio/3cd5f8c0-80c8-4d8f-a1a1-95953cc6da76.wav HTTP/1.1" 404 Not Found
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-04-07T16:11:35  INFO      app.main  lifespan: shutting down inference worker
+2026-04-07T16:11:35  INFO      app.main  lifespan: shutdown complete
+INFO:     Application shutdown complete.
+INFO:     Finished server process [30592]
+/home/mikulasstencel/_github/tts-app/.venv/lib/python3.12/site-packages/pydantic/_internal/_fields.py:132: UserWarning: Field "model_name" in AudioGenerationOut has conflict with protected namespace "model_".
+
+You may be able to resolve this warning by setting `model_config['protected_namespaces'] = ()`.
+  warnings.warn(
+INFO:     Started server process [31980]
+INFO:     Waiting for application startup.
+2026-04-07T16:11:37  INFO      app.main  lifespan: audio output dir → app/static/audio
+2026-04-07T16:11:37  INFO      app.main  lifespan: database tables ready
+2026-04-07T16:11:37  INFO      app.tts_engine  TTSService: LAZY_FISH_SPEECH=true — Fish Speech will be loaded on first request
+2026-04-07T16:11:37  INFO      app.tts_engine  TTSService: LAZY_XTTS=true — XTTS will be loaded on first request
+2026-04-07T16:11:37  INFO      app.tts_engine  TTSService: all models ready
+2026-04-07T16:11:37  INFO      app.main  lifespan: application ready
+2026-04-07T16:11:37  INFO      app.main  inference_worker: started
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-04-07T16:11:55  INFO      app.main  lifespan: shutting down inference worker
+2026-04-07T16:11:55  INFO      app.main  lifespan: shutdown complete
+INFO:     Application shutdown complete.
+INFO:     Finished server process [31980]
+/home/mikulasstencel/_github/tts-app/.venv/lib/python3.12/site-packages/pydantic/_internal/_fields.py:132: UserWarning: Field "model_name" in AudioGenerationOut has conflict with protected namespace "model_".
+
+You may be able to resolve this warning by setting `model_config['protected_namespaces'] = ()`.
+  warnings.warn(
+INFO:     Started server process [32376]
+INFO:     Waiting for application startup.
+2026-04-07T16:12:10  INFO      app.main  lifespan: audio output dir → app/static/audio
+2026-04-07T16:12:10  INFO      app.main  lifespan: database tables ready
+2026-04-07T16:12:10  INFO      app.tts_engine  TTSService: LAZY_FISH_SPEECH=true — Fish Speech will be loaded on first request
+2026-04-07T16:12:10  INFO      app.tts_engine  TTSService: LAZY_XTTS=true — XTTS will be loaded on first request
+2026-04-07T16:12:10  INFO      app.tts_engine  TTSService: all models ready
+2026-04-07T16:12:10  INFO      app.main  lifespan: application ready
+2026-04-07T16:12:10  INFO      app.main  inference_worker: started
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:42450 - "GET /history?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42454 - "GET /static/audio/956b007e-39fe-4307-84b1-cfb41840caf5.wav HTTP/1.1" 206 Partial Content
+INFO:     127.0.0.1:42464 - "GET /static/audio/3cd5f8c0-80c8-4d8f-a1a1-95953cc6da76.wav HTTP/1.1" 206 Partial Content
+INFO:     127.0.0.1:42464 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42464 - "GET /openapi.json HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54444 - "OPTIONS /audio/3cd5f8c0-80c8-4d8f-a1a1-95953cc6da76 HTTP/1.1" 200 OK
+2026-04-07T16:12:29  INFO      app.main  DELETE /audio/3cd5f8c0-80c8-4d8f-a1a1-95953cc6da76: removed app/static/audio/3cd5f8c0-80c8-4d8f-a1a1-95953cc6da76.wav
+2026-04-07T16:12:29  INFO      app.main  DELETE /audio/3cd5f8c0-80c8-4d8f-a1a1-95953cc6da76: removed app/static/audio/3cd5f8c0-80c8-4d8f-a1a1-95953cc6da76.mp3
+2026-04-07T16:12:29  INFO      app.main  DELETE /audio/3cd5f8c0-80c8-4d8f-a1a1-95953cc6da76: DB record deleted
+INFO:     127.0.0.1:54444 - "DELETE /audio/3cd5f8c0-80c8-4d8f-a1a1-95953cc6da76 HTTP/1.1" 204 No Content

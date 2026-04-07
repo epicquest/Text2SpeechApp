@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Local TTS</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2.5rem 1rem 4rem;
+    }
+
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+      color: #f8fafc;
+    }
+
+    .subtitle {
+      font-size: 0.875rem;
+      color: #64748b;
+      margin-bottom: 2.5rem;
+    }
+
+    .card {
+      background: #1e2130;
+      border: 1px solid #2d3148;
+      border-radius: 12px;
+      padding: 1.75rem;
+      width: 100%;
+      max-width: 680px;
+      margin-bottom: 1.5rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #94a3b8;
+      margin-bottom: 0.5rem;
+    }
+
+    textarea {
+      width: 100%;
+      height: 130px;
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 8px;
+      color: #e2e8f0;
+      font-size: 0.95rem;
+      padding: 0.75rem;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    textarea:focus { border-color: #6366f1; }
+
+    .row {
+      display: flex;
+      gap: 1rem;
+      margin-top: 1rem;
+      align-items: flex-end;
+    }
+
+    .field { flex: 1; }
+
+    select {
+      width: 100%;
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 8px;
+      color: #e2e8f0;
+      font-size: 0.95rem;
+      padding: 0.6rem 0.75rem;
+      outline: none;
+      cursor: pointer;
+    }
+
+    button {
+      padding: 0.65rem 1.5rem;
+      border-radius: 8px;
+      border: none;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button.primary { background: #6366f1; color: #fff; }
+    button.primary:not(:disabled):hover { opacity: 0.85; }
+    button.danger { background: #ef4444; color: #fff; }
+    button.danger:not(:disabled):hover { opacity: 0.85; }
+
+    #status-box {
+      margin-top: 1.25rem;
+      font-size: 0.9rem;
+      min-height: 1.25rem;
+      color: #94a3b8;
+    }
+    #status-box .error { color: #f87171; }
+
+    audio {
+      width: 100%;
+      margin-top: 1rem;
+      accent-color: #6366f1;
+    }
+
+    /* History */
+    .section-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #cbd5e1;
+      margin-bottom: 1rem;
+    }
+
+    #history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .hist-item {
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .hist-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .hist-model {
+      font-size: 0.72rem;
+      background: #2d3148;
+      border-radius: 4px;
+      padding: 0.1rem 0.45rem;
+      color: #94a3b8;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .hist-time {
+      font-size: 0.75rem;
+      color: #475569;
+    }
+
+    .hist-text {
+      font-size: 0.88rem;
+      color: #cbd5e1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .hist-status {
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .hist-status.done    { color: #4ade80; }
+    .hist-status.pending,
+    .hist-status.processing { color: #facc15; }
+    .hist-status.error   { color: #f87171; }
+
+    .hist-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+
+    .hist-actions audio { flex: 1; min-width: 200px; margin: 0; }
+
+    .btn-sm {
+      padding: 0.3rem 0.75rem;
+      font-size: 0.8rem;
+    }
+
+    #refresh-btn {
+      font-size: 0.8rem;
+      background: #2d3148;
+      color: #94a3b8;
+      padding: 0.35rem 0.9rem;
+      border-radius: 6px;
+    }
+    #refresh-btn:hover { background: #3a4060; }
+
+    .no-history { font-size: 0.875rem; color: #475569; text-align: center; padding: 1rem 0; }
+  </style>
+</head>
+<body>
+
+  <h1>Local TTS</h1>
+  <p class="subtitle">GPU-accelerated · Fish Speech v1.5 &amp; XTTS v2</p>
+
+  <!-- Generate card -->
+  <div class="card">
+    <label for="text-input">Text</label>
+    <textarea id="text-input" placeholder="Type something to synthesise…"></textarea>
+
+    <div class="row">
+      <div class="field">
+        <label for="model-select">Model</label>
+        <select id="model-select">
+          <option value="fish_speech">Fish Speech v1.5</option>
+          <option value="xtts">XTTS v2</option>
+        </select>
+      </div>
+      <button id="generate-btn" class="primary" onclick="handleGenerate()">Generate</button>
+    </div>
+
+    <div id="status-box"></div>
+    <audio id="result-audio" controls style="display:none"></audio>
+  </div>
+
+  <!-- History card -->
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+      <span class="section-title" style="margin:0">History</span>
+      <button id="refresh-btn" onclick="loadHistory()">↻ Refresh</button>
+    </div>
+    <div id="history-list"><p class="no-history">Loading…</p></div>
+  </div>
+
+  <script>
+    const API = 'http://127.0.0.1:8000';
+    let pollTimer = null;
+
+    // -----------------------------------------------------------------------
+    // Generate
+    // -----------------------------------------------------------------------
+    async function handleGenerate() {
+      const text = document.getElementById('text-input').value.trim();
+      if (!text) { setStatus('Please enter some text.', true); return; }
+
+      const model = document.getElementById('model-select').value;
+      const btn   = document.getElementById('generate-btn');
+      const audio = document.getElementById('result-audio');
+
+      btn.disabled = true;
+      audio.style.display = 'none';
+      setStatus('Submitting job…');
+
+      let jobId;
+      try {
+        const res  = await fetch(`${API}/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, model }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        jobId = data.job_id;
+      } catch (err) {
+        setStatus(`Failed to submit: ${err.message}`, true);
+        btn.disabled = false;
+        return;
+      }
+
+      setStatus(`Job queued (${jobId.slice(0, 8)}…) — waiting…`);
+      clearInterval(pollTimer);
+      pollTimer = setInterval(() => pollStatus(jobId, btn), 1500);
+    }
+
+    async function pollStatus(jobId, btn) {
+      try {
+        const res  = await fetch(`${API}/status/${jobId}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        if (data.status === 'pending' || data.status === 'processing') {
+          setStatus(`Status: ${data.status}…`);
+          return; // keep polling
+        }
+
+        clearInterval(pollTimer);
+        btn.disabled = false;
+
+        if (data.status === 'done' && data.file_path) {
+          setStatus('Done ✓');
+          const audio = document.getElementById('result-audio');
+          audio.src = `${API}${data.file_path}`;
+          audio.style.display = 'block';
+          audio.play().catch(() => {});
+          loadHistory();
+        } else if (data.status === 'error') {
+          setStatus(`Error: ${data.error || 'unknown'}`, true);
+        }
+
+      } catch (err) {
+        // transient network blip — keep polling
+        console.warn('Poll error:', err);
+      }
+    }
+
+    function setStatus(msg, isError = false) {
+      const box = document.getElementById('status-box');
+      box.innerHTML = isError
+        ? `<span class="error">${escHtml(msg)}</span>`
+        : escHtml(msg);
+    }
+
+    // -----------------------------------------------------------------------
+    // History
+    // -----------------------------------------------------------------------
+    async function loadHistory() {
+      const list = document.getElementById('history-list');
+      try {
+        const res  = await fetch(`${API}/history?limit=20`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        if (!data.length) {
+          list.innerHTML = '<p class="no-history">No generations yet.</p>';
+          return;
+        }
+
+        list.innerHTML = data.map(item => {
+          const time = item.created_at
+            ? new Date(item.created_at).toLocaleString()
+            : '—';
+          const audioHtml = (item.status === 'done' && item.file_path)
+            ? `<audio controls src="${API}/static/audio/${item.file_path.split('/').pop()}"></audio>`
+            : '';
+          return `
+            <div class="hist-item" id="item-${item.id}">
+              <div class="hist-meta">
+                <span class="hist-model">${escHtml(item.model_name)}</span>
+                <span class="hist-status ${item.status}">${item.status}</span>
+                <span class="hist-time">${time}</span>
+              </div>
+              <div class="hist-text" title="${escHtml(item.input_text)}">${escHtml(item.input_text)}</div>
+              <div class="hist-actions">
+                ${audioHtml}
+                <button class="danger btn-sm" onclick="deleteItem('${item.id}')">Delete</button>
+              </div>
+            </div>`;
+        }).join('');
+      } catch (err) {
+        list.innerHTML = `<p class="no-history" style="color:#f87171">Failed to load history: ${escHtml(err.message)}</p>`;
+      }
+    }
+
+    async function deleteItem(id) {
+      try {
+        const res = await fetch(`${API}/audio/${id}`, { method: 'DELETE' });
+        if (res.status === 204 || res.ok) {
+          document.getElementById(`item-${id}`)?.remove();
+          if (!document.querySelector('.hist-item')) {
+            document.getElementById('history-list').innerHTML =
+              '<p class="no-history">No generations yet.</p>';
+          }
+        } else {
+          alert(`Delete failed: HTTP ${res.status}`);
+        }
+      } catch (err) {
+        alert(`Delete failed: ${err.message}`);
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Util
+    // -----------------------------------------------------------------------
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // Load history on page load
+    loadHistory();
+  </script>
+</body>
+</html>

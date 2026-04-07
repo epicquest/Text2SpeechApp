@@ -169,20 +169,34 @@ class FishSpeechBackend(BaseTTSBackend):
         logger.info("FishSpeechBackend: loaded in %.2fs", elapsed)
         self._loaded = True
 
-    def generate(self, text: str, output_path: Path) -> None:
+    def generate(self, text: str, output_path: Path,  # type: ignore[override]
+                 reference_wav: Path | None = None,
+                 reference_text: str | None = None) -> None:
         if not self._loaded:
             raise RuntimeError("FishSpeechBackend.load() has not been called")
 
         try:
             import soundfile as sf
-            from tools.schema import ServeTTSRequest
+            from tools.schema import ServeReferenceAudio, ServeTTSRequest
         except ImportError as exc:
             raise RuntimeError("fish_speech package not available") from exc
 
-        logger.debug("FishSpeechBackend: synthesising %d chars", len(text))
+        logger.debug("FishSpeechBackend: synthesising %d chars (voice ref: %s)",
+                     len(text), reference_wav)
         t0 = time.perf_counter()
 
-        req = ServeTTSRequest(text=text, streaming=False)
+        references = []
+        if reference_wav is not None and reference_wav.is_file():
+            references = [ServeReferenceAudio(
+                audio=reference_wav.read_bytes(),
+                text=reference_text or "",
+            )]
+
+        # Use a fixed seed when no reference voice is supplied so the default
+        # speaker stays consistent across requests instead of being random.
+        seed = None if references else 42
+
+        req = ServeTTSRequest(text=text, streaming=False, references=references, seed=seed)
 
         try:
             result = None
@@ -429,7 +443,51 @@ class TTSService:
 
         backend.generate(text, wav_path)
         self._convert_to_mp3(wav_path, mp3_path)
+        return wav_path, mp3_path
 
+    def generate_with_voice(
+        self,
+        text: str,
+        model_name: str,
+        job_id: str,
+        voice_id: str | None = None,
+    ) -> tuple[Path, Path]:
+        """Synthesise text using an optional saved voice profile for reference."""
+        self._output_dir.mkdir(parents=True, exist_ok=True)
+
+        backend = self._resolve_backend(model_name)
+
+        if not backend.is_loaded:
+            logger.info(
+                "TTSService: lazily loading backend %r before first use", backend.name
+            )
+            backend.load()
+
+        wav_path = self._output_dir / f"{job_id}.wav"
+        mp3_path = self._output_dir / f"{job_id}.mp3"
+
+        reference_wav: Path | None = None
+        reference_text: str | None = None
+
+        if voice_id and isinstance(backend, FishSpeechBackend):
+            voices_dir = Path("app/static/voices")
+            candidate = voices_dir / f"{voice_id}.wav"
+            transcript = voices_dir / f"{voice_id}.txt"
+            if candidate.is_file():
+                reference_wav = candidate
+                reference_text = transcript.read_text(encoding="utf-8").strip() \
+                    if transcript.is_file() else ""
+            else:
+                logger.warning("TTSService: voice %r not found, using default", voice_id)
+
+        if isinstance(backend, FishSpeechBackend):
+            backend.generate(text, wav_path,
+                             reference_wav=reference_wav,
+                             reference_text=reference_text)
+        else:
+            backend.generate(text, wav_path)
+
+        self._convert_to_mp3(wav_path, mp3_path)
         return wav_path, mp3_path
 
     # ------------------------------------------------------------------

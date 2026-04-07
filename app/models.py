@@ -85,6 +85,7 @@ class AudioGeneration(Base):
     )
     input_text: Mapped[str] = mapped_column(Text, nullable=False)
     model_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    voice_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     file_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     status: Mapped[str] = mapped_column(
         String(32),
@@ -109,6 +110,7 @@ class AudioGeneration(Base):
             "id": str(self.id),
             "input_text": self.input_text,
             "model_name": self.model_name,
+            "voice_id": self.voice_id,
             "file_path": self.file_path,
             "status": self.status,
             "created_at": self.created_at.isoformat() if self.created_at else None,

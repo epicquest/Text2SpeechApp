@@ -40,7 +40,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypedDict
 
-from fastapi import Depends, FastAPI, HTTPException, status
+import re
+
+from fastapi import Depends, FastAPI, File, Form, HTTPException, status, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -85,15 +87,15 @@ job_store: dict[str, JobState] = {}
 
 
 async def inference_worker(
-    queue: asyncio.Queue[tuple[str, str, str]],
+    queue: asyncio.Queue[tuple[str, str, str, str | None]],
     executor: ThreadPoolExecutor,
 ) -> None:
     """
     Consume jobs from ``queue`` one at a time and run GPU inference.
 
-    Each queue item is a ``(job_id, text, model_name)`` tuple.  The blocking
-    ``TTSService.generate()`` call is dispatched to the executor's single
-    worker thread so the event loop remains responsive.
+    Each queue item is a ``(job_id, text, model_name, voice_id)`` tuple.  The
+    blocking ``TTSService.generate_with_voice()`` call is dispatched to the
+    executor's single worker thread so the event loop remains responsive.
 
     DB writes happen in this coroutine (async context) after the executor
     returns — never inside the executor thread — to avoid thread-safety issues
@@ -103,8 +105,8 @@ async def inference_worker(
     logger.info("inference_worker: started")
 
     while True:
-        job_id, text, model_name = await queue.get()
-        logger.info("inference_worker: starting job %s (model=%s)", job_id, model_name)
+        job_id, text, model_name, voice_id = await queue.get()
+        logger.info("inference_worker: starting job %s (model=%s voice=%s)", job_id, model_name, voice_id)
 
         # ---- Update state: pending → processing ----
         job_store[job_id]["status"] = "processing"
@@ -118,10 +120,11 @@ async def inference_worker(
         try:
             wav_path, _mp3_path = await loop.run_in_executor(
                 executor,
-                TTSService.get().generate,
+                TTSService.get().generate_with_voice,
                 text,
                 model_name,
                 job_id,
+                voice_id,
             )
 
             # Derive a relative URL path for the frontend  (e.g. /static/audio/…)
@@ -190,7 +193,7 @@ async def lifespan(app: FastAPI):
     await TTSService.get().load_models()
 
     # 4. Create queue, executor, and worker task
-    queue: asyncio.Queue[tuple[str, str, str]] = asyncio.Queue()
+    queue: asyncio.Queue[tuple[str, str, str, str | None]] = asyncio.Queue()
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="gpu-worker")
 
     worker_task = asyncio.create_task(
@@ -239,8 +242,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Derived paths for static file directories
+VOICES_DIR: Path = settings.AUDIO_OUTPUT_DIR.parent / "voices"
+
+# Ensure directories exist (StaticFiles raises RuntimeError if directory is missing)
+settings.AUDIO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+VOICES_DIR.mkdir(parents=True, exist_ok=True)
+
 # Serve generated audio files at /static/audio/
 app.mount("/static/audio", StaticFiles(directory=str(settings.AUDIO_OUTPUT_DIR)), name="audio")
+# Serve voice reference audio at /static/voices/
+app.mount("/static/voices", StaticFiles(directory=str(VOICES_DIR)), name="voices")
 
 # ---------------------------------------------------------------------------
 # Pydantic schemas
@@ -252,6 +264,10 @@ class GenerateRequest(BaseModel):
     model: str = Field(
         default="fish_speech",
         description='TTS backend: "fish_speech" | "xtts"',
+    )
+    voice: str | None = Field(
+        default=None,
+        description="Voice profile ID (stem of the .wav file in app/static/voices/)",
     )
 
 
@@ -271,6 +287,7 @@ class AudioGenerationOut(BaseModel):
     id: str
     input_text: str
     model_name: str
+    voice_id: str | None
     file_path: str | None
     status: str
     created_at: str | None
@@ -278,6 +295,23 @@ class AudioGenerationOut(BaseModel):
     @classmethod
     def from_orm(cls, record: AudioGeneration) -> AudioGenerationOut:
         return cls(**record.to_dict())
+
+
+class VoiceOut(BaseModel):
+    id: str
+    name: str
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _slugify_voice_name(name: str) -> str:
+    """Convert a display name to a safe filename stem (alphanumeric + dash/underscore)."""
+    slug = re.sub(r"[^\w\-]", "_", name.strip().lower())
+    slug = re.sub(r"_+", "_", slug).strip("_")
+    return slug[:64]
 
 
 # ---------------------------------------------------------------------------
@@ -308,6 +342,7 @@ async def generate(
         id=uuid.UUID(job_id),
         input_text=req.text,
         model_name=req.model,
+        voice_id=req.voice,
         status="pending",
     )
     session.add(record)
@@ -317,8 +352,8 @@ async def generate(
     job_store[job_id] = JobState(status="pending", file_path=None, error=None)
 
     # 3. Enqueue the job
-    await app.state.queue.put((job_id, req.text, req.model))
-    logger.info("POST /generate: enqueued job %s (model=%s)", job_id, req.model)
+    await app.state.queue.put((job_id, req.text, req.model, req.voice))
+    logger.info("POST /generate: enqueued job %s (model=%s voice=%s)", job_id, req.model, req.voice)
 
     return GenerateResponse(job_id=job_id)
 
@@ -438,6 +473,86 @@ async def delete_audio(
     await session.delete(record)
     await session.commit()
     logger.info("DELETE /audio/%s: DB record deleted", audio_id)
+
+
+# ---------------------------------------------------------------------------
+# Voice profile endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get(
+    "/voices",
+    response_model=list[VoiceOut],
+    summary="List available voice profiles",
+)
+async def list_voices() -> list[VoiceOut]:
+    """Return all voice profiles stored in the voices directory."""
+    voices = []
+    for wav in sorted(VOICES_DIR.glob("*.wav")):
+        display = wav.stem.replace("_", " ").replace("-", " ").title()
+        voices.append(VoiceOut(id=wav.stem, name=display))
+    return voices
+
+
+@app.post(
+    "/voices",
+    response_model=VoiceOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload a new voice profile",
+)
+async def create_voice(
+    name: str = Form(..., min_length=1, max_length=100),
+    transcript: str = Form(default="", description="Text spoken in the reference audio"),
+    audio: UploadFile = File(..., description="Reference WAV audio file"),
+) -> VoiceOut:
+    """
+    Upload a WAV reference audio file to create a voice profile.
+
+    The ``name`` becomes the display label; the URL-safe slugified form is
+    used as the ``id``.  The optional ``transcript`` (what is spoken in the
+    audio) improves voice-cloning accuracy for Fish Speech.
+    """
+    voice_id = _slugify_voice_name(name)
+    if not voice_id:
+        raise HTTPException(status_code=422, detail="Voice name produced an empty slug")
+
+    # Accept only WAV files
+    is_wav_content = (audio.content_type or "").lower() in (
+        "audio/wav", "audio/x-wav", "audio/wave",
+    )
+    is_wav_name = (audio.filename or "").lower().endswith(".wav")
+    if not (is_wav_content or is_wav_name):
+        raise HTTPException(
+            status_code=422,
+            detail="audio must be a WAV file (.wav)",
+        )
+
+    content = await audio.read()
+    (VOICES_DIR / f"{voice_id}.wav").write_bytes(content)
+    (VOICES_DIR / f"{voice_id}.txt").write_text(transcript, encoding="utf-8")
+
+    logger.info("POST /voices: created voice %r (%d bytes)", voice_id, len(content))
+    return VoiceOut(id=voice_id, name=name)
+
+
+@app.delete(
+    "/voices/{voice_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a voice profile",
+)
+async def delete_voice(voice_id: str) -> None:
+    """Remove the WAV and transcript files for a voice profile."""
+    if not re.fullmatch(r"[\w\-]{1,64}", voice_id):
+        raise HTTPException(status_code=422, detail="Invalid voice_id")
+
+    wav_path = VOICES_DIR / f"{voice_id}.wav"
+    if not wav_path.is_file():
+        raise HTTPException(status_code=404, detail="Voice not found")
+
+    wav_path.unlink()
+    txt_path = VOICES_DIR / f"{voice_id}.txt"
+    txt_path.unlink(missing_ok=True)
+    logger.info("DELETE /voices/%s: removed", voice_id)
 
 
 # ---------------------------------------------------------------------------

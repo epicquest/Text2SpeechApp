@@ -125,6 +125,44 @@
       margin-bottom: 1rem;
     }
 
+    /* Voice upload form */
+    .upload-form {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid #2d3148;
+    }
+    .upload-form input[type="text"],
+    .upload-form textarea {
+      height: auto;
+    }
+    .upload-form input[type="file"] {
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 8px;
+      color: #94a3b8;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.875rem;
+      cursor: pointer;
+    }
+    .upload-form .row { margin-top: 0; }
+
+    /* Voice list */
+    .voice-item {
+      background: #0f1117;
+      border: 1px solid #2d3148;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .voice-name { flex: 1; font-size: 0.9rem; color: #cbd5e1; }
+    .voice-id   { font-size: 0.72rem; color: #475569; font-family: monospace; }
+
     #history-list {
       display: flex;
       flex-direction: column;
@@ -220,11 +258,38 @@
           <option value="xtts">XTTS v2</option>
         </select>
       </div>
+      <div class="field">
+        <label for="voice-select">Voice</label>
+        <select id="voice-select">
+          <option value="">— Default —</option>
+        </select>
+      </div>
       <button id="generate-btn" class="primary" onclick="handleGenerate()">Generate</button>
     </div>
 
     <div id="status-box"></div>
     <audio id="result-audio" controls style="display:none"></audio>
+  </div>
+
+  <!-- Voices card -->
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+      <span class="section-title" style="margin:0">Voices</span>
+      <button id="refresh-voices-btn" onclick="loadVoices()" style="font-size:0.8rem;background:#2d3148;color:#94a3b8;padding:0.35rem 0.9rem;border-radius:6px;">↻ Refresh</button>
+    </div>
+    <div id="voice-list"><p class="no-history">Loading…</p></div>
+
+    <div class="upload-form">
+      <label style="margin-bottom:0">Upload new voice</label>
+      <input id="voice-name-input" type="text" placeholder="Display name (e.g. Morgan Freeman)"
+             style="background:#0f1117;border:1px solid #2d3148;border-radius:8px;color:#e2e8f0;font-size:0.9rem;padding:0.6rem 0.75rem;outline:none;" />
+      <input id="voice-file-input" type="file" accept=".wav,audio/wav,audio/x-wav" />
+      <textarea id="voice-transcript-input" placeholder="Transcript — paste the exact words spoken in the audio (optional but recommended)" style="height:70px;"></textarea>
+      <div class="row">
+        <button class="primary" onclick="uploadVoice()" id="upload-voice-btn">Upload</button>
+        <span id="upload-voice-status" style="font-size:0.85rem;color:#94a3b8;"></span>
+      </div>
+    </div>
   </div>
 
   <!-- History card -->
@@ -248,6 +313,7 @@
       if (!text) { setStatus('Please enter some text.', true); return; }
 
       const model = document.getElementById('model-select').value;
+      const voice = document.getElementById('voice-select').value || null;
       const btn   = document.getElementById('generate-btn');
       const audio = document.getElementById('result-audio');
 
@@ -260,7 +326,7 @@
         const res  = await fetch(`${API}/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, model }),
+          body: JSON.stringify({ text, model, voice }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
@@ -315,6 +381,104 @@
     }
 
     // -----------------------------------------------------------------------
+    // Voices
+    // -----------------------------------------------------------------------
+    async function loadVoices() {
+      const list = document.getElementById('voice-list');
+      const sel  = document.getElementById('voice-select');
+      try {
+        const res  = await fetch(`${API}/voices`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        // Rebuild the voice dropdown (keep the "Default" option)
+        const currentVal = sel.value;
+        while (sel.options.length > 1) sel.remove(1);
+        data.forEach(v => {
+          const opt = new Option(v.name, v.id);
+          sel.add(opt);
+        });
+        // Restore selection if still present
+        if ([...sel.options].some(o => o.value === currentVal)) sel.value = currentVal;
+
+        // Rebuild the voice list UI
+        if (!data.length) {
+          list.innerHTML = '<p class="no-history">No voices uploaded yet.</p>';
+          return;
+        }
+        list.innerHTML = data.map(v => `
+          <div class="voice-item" id="voice-item-${v.id}">
+            <span class="voice-name">${escHtml(v.name)}</span>
+            <span class="voice-id">${escHtml(v.id)}</span>
+            <audio controls src="${API}/static/voices/${encodeURIComponent(v.id)}.wav"
+                   style="flex:1;min-width:160px;margin:0;accent-color:#6366f1;"></audio>
+            <button class="danger btn-sm" onclick="deleteVoice('${escHtml(v.id)}')">Delete</button>
+          </div>`).join('');
+      } catch (err) {
+        list.innerHTML = `<p class="no-history" style="color:#f87171">Failed to load voices: ${escHtml(err.message)}</p>`;
+      }
+    }
+
+    async function uploadVoice() {
+      const name       = document.getElementById('voice-name-input').value.trim();
+      const fileInput  = document.getElementById('voice-file-input');
+      const transcript = document.getElementById('voice-transcript-input').value;
+      const statusEl   = document.getElementById('upload-voice-status');
+      const btn        = document.getElementById('upload-voice-btn');
+
+      if (!name)              { statusEl.textContent = 'Please enter a display name.'; statusEl.style.color='#f87171'; return; }
+      if (!fileInput.files[0]) { statusEl.textContent = 'Please select a WAV file.';   statusEl.style.color='#f87171'; return; }
+
+      btn.disabled = true;
+      statusEl.textContent = 'Uploading…';
+      statusEl.style.color = '#94a3b8';
+
+      const form = new FormData();
+      form.append('name', name);
+      form.append('transcript', transcript);
+      form.append('audio', fileInput.files[0]);
+
+      try {
+        const res = await fetch(`${API}/voices`, { method: 'POST', body: form });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+          throw new Error(err.detail || `HTTP ${res.status}`);
+        }
+        statusEl.textContent = 'Voice uploaded!';
+        statusEl.style.color = '#4ade80';
+        document.getElementById('voice-name-input').value = '';
+        document.getElementById('voice-transcript-input').value = '';
+        fileInput.value = '';
+        await loadVoices();
+      } catch (err) {
+        statusEl.textContent = `Upload failed: ${err.message}`;
+        statusEl.style.color = '#f87171';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function deleteVoice(id) {
+      try {
+        const res = await fetch(`${API}/voices/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (res.status === 204 || res.ok) {
+          document.getElementById(`voice-item-${id}`)?.remove();
+          // Remove from dropdown
+          const sel = document.getElementById('voice-select');
+          const opt = [...sel.options].find(o => o.value === id);
+          if (opt) opt.remove();
+          if (!document.querySelector('.voice-item')) {
+            document.getElementById('voice-list').innerHTML = '<p class="no-history">No voices uploaded yet.</p>';
+          }
+        } else {
+          alert(`Delete failed: HTTP ${res.status}`);
+        }
+      } catch (err) {
+        alert(`Delete failed: ${err.message}`);
+      }
+    }
+
+    // -----------------------------------------------------------------------
     // History
     // -----------------------------------------------------------------------
     async function loadHistory() {
@@ -336,10 +500,14 @@
           const audioHtml = (item.status === 'done' && item.file_path)
             ? `<audio controls src="${API}/static/audio/${item.file_path.split('/').pop()}"></audio>`
             : '';
+          const voiceBadge = item.voice_id
+            ? `<span class="hist-model" style="background:#1e3a2f;color:#4ade80;" title="Voice profile used">🎙 ${escHtml(item.voice_id.replace(/_/g,' '))}</span>`
+            : `<span class="hist-model" style="background:#1e2a3a;color:#60a5fa;" title="No voice profile">default</span>`;
           return `
             <div class="hist-item" id="item-${item.id}">
               <div class="hist-meta">
                 <span class="hist-model">${escHtml(item.model_name)}</span>
+                ${voiceBadge}
                 <span class="hist-status ${item.status}">${item.status}</span>
                 <span class="hist-time">${time}</span>
               </div>
@@ -383,7 +551,8 @@
         .replace(/"/g, '&quot;');
     }
 
-    // Load history on page load
+    // Load data on page load
+    loadVoices();
     loadHistory();
   </script>
 </body>

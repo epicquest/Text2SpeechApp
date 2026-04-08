@@ -280,10 +280,9 @@ class XTTSBackend(BaseTTSBackend):
     """
     Coqui XTTS v2 — zero-shot voice cloning.
 
-    Requires a reference speaker WAV file configured via XTTS_SPEAKER_WAV.
-    The TTS library handles file writing; this backend delegates entirely to it.
-    ``generate_with_reference()`` inherits the default (ignores reference audio)
-    since XTTS uses its own fixed speaker WAV from config.
+    Always requires a speaker reference WAV for synthesis: either via the
+    selected voice profile (``generate_with_reference()``) or via the
+    ``XTTS_SPEAKER_WAV`` config fallback (``generate()``).
     """
 
     name = "xtts"
@@ -305,12 +304,18 @@ class XTTSBackend(BaseTTSBackend):
         t0 = time.perf_counter()
 
         try:
+            import os  # pylint: disable=import-outside-toplevel
+
             from TTS.api import TTS  # type: ignore[import]  # pylint: disable=C0415
         except ImportError as exc:
             raise RuntimeError(
                 "Coqui TTS package not found. Install it with:\n"
-                "  pip install TTS>=0.22"
+                "  pip install coqui-tts"
             ) from exc
+
+        # Accept Coqui TOS programmatically so the server (which has no stdin)
+        # never hangs waiting for interactive input on first model download.
+        os.environ.setdefault("COQUI_TOS_AGREED", "1")
 
         self._tts = TTS(self._model_id).to(self._device)
 
@@ -318,17 +323,15 @@ class XTTSBackend(BaseTTSBackend):
         logger.info("XTTSBackend: loaded in %.2fs", elapsed)
         self._loaded = True
 
-    @torch.no_grad()
-    def generate(self, text: str, output_path: Path) -> None:
-        """Synthesise *text* using the fixed speaker reference from config."""
+    def _synthesise(self, text: str, speaker_wav: Path, output_path: Path) -> None:
+        """Internal helper: run tts_to_file with the given speaker WAV."""
         if not self._loaded:
             raise RuntimeError("XTTSBackend.load() has not been called")
 
-        speaker_wav = Path(self._speaker_wav)
         if not speaker_wav.is_file():
             raise FileNotFoundError(
-                f"XTTS speaker reference WAV not found at {self._speaker_wav}. "
-                "Place a ~10-second clean-speech WAV at that path."
+                f"XTTS speaker reference WAV not found at {speaker_wav}. "
+                "Select a voice profile or set XTTS_SPEAKER_WAV."
             )
 
         logger.debug("XTTSBackend: synthesising %d chars", len(text))
@@ -351,6 +354,37 @@ class XTTSBackend(BaseTTSBackend):
 
         elapsed = time.perf_counter() - t0
         logger.info("XTTSBackend: synthesis done in %.2fs → %s", elapsed, output_path)
+
+    @torch.no_grad()
+    def generate(self, text: str, output_path: Path) -> None:
+        """Synthesise *text* using the fallback speaker WAV from config.
+
+        For best results select a voice profile instead, which uses
+        ``generate_with_reference()`` with the profile's own WAV file.
+        """
+        fallback = Path(self._speaker_wav)
+        if not fallback.is_file():
+            raise FileNotFoundError(
+                f"XTTS requires a speaker reference WAV, but none was found at "
+                f"'{self._speaker_wav}' (XTTS_SPEAKER_WAV). "
+                "Please select a voice profile in the UI, or set XTTS_SPEAKER_WAV "
+                "to a valid WAV file path."
+            )
+        self._synthesise(text, fallback, output_path)
+
+    @torch.no_grad()
+    def generate_with_reference(
+        self,
+        text: str,
+        output_path: Path,
+        reference_wav: Path | None = None,
+        reference_text: str | None = None,  # pylint: disable=unused-argument
+    ) -> None:
+        """Synthesise *text* cloning the voice from *reference_wav*."""
+        if reference_wav is not None:
+            self._synthesise(text, reference_wav, output_path)
+        else:
+            self.generate(text, output_path)
 
 
 # ---------------------------------------------------------------------------

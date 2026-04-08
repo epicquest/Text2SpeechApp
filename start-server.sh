@@ -80,6 +80,9 @@ fi
 echo "[start-server] Starting TTS server on http://${HOST}:${PORT}"
 echo "[start-server] Log file: $LOG_FILE"
 
+# Auto-accept Coqui TOS so XTTS v2 can be downloaded without interactive prompt.
+export COQUI_TOS_AGREED="1"
+
 nohup "$UVICORN" app.main:app \
     --host "$HOST" \
     --port "$PORT" \

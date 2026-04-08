@@ -12,7 +12,7 @@
 #   python3.12 -m venv .venv && source .venv/bin/activate
 #
 #   # 2. Install PyTorch with CUDA 12.1 (choose the right CUDA version for your driver)
-#   pip install torch==2.3.0 torchaudio==2.3.0 --index-url https://download.pytorch.org/whl/cu121
+#   pip install torch==2.4.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu121
 #
 #   # 3. Install everything else
 #   pip install -r requirements.txt
@@ -65,8 +65,8 @@ asyncpg>=0.29.0,<1.0.0
 # PyTorch — installed separately (see QUICK START above)
 # These pins document the tested versions; remove if installing via --index-url
 # =============================================================================
-# torch==2.3.0       # install via: pip install torch==2.3.0 --index-url ...
-# torchaudio==2.3.0  # install via: pip install torchaudio==2.3.0 --index-url ...
+# torch==2.4.1       # install via: pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
+# torchaudio==2.4.1  # install via: pip install torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu121
 
 # =============================================================================
 # Audio I/O
@@ -82,9 +82,10 @@ pydub>=0.25.1,<1.0.0             # WAV → MP3 conversion (requires ffmpeg in PA
 # if the VCS dependency is already present in the venv.
 # fish-speech @ git+https://github.com/fishaudio/fish-speech.git@v1.5.0
 
-# TTS>=0.22.0,<1.0.0             # Coqui XTTS v2 — requires Python <3.12; incompatible with this venv.
-#                                 # XTTSBackend will raise ImportError at load time if used.
-#                                 # Install manually on Python 3.11 if XTTS is needed.
+coqui-tts>=0.27.5                # Coqui XTTS v2 — Python 3.12 compatible fork of the original TTS package.
+                                 # Requires PyTorch >= 2.4 (transformers 5.x dependency).
+                                 # After install, patch .venv/.../TTS/tts/layers/tortoise/autoregressive.py:
+                                 #   replace the isin_mps_friendly import with: isin = torch.isin
 
 # =============================================================================
 # Utilities
